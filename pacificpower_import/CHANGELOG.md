@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3
+
+- AppArmor profile now actually loads on HA OS. Previous versions
+  included `<abstractions/openssl>` and `<abstractions/python>` which
+  don't exist on the host's AppArmor setup — parser failed silently
+  and the supervisor fell back to the default profile (rating stuck
+  at 5/8). Profile trimmed to `base` + `nameservice` only, matching
+  the official add-on pattern. Rating should now be 6/8.
+
 ## 0.1.2
 
 - Backfill now iterates 25 "One Month" downloads instead of one "Two
