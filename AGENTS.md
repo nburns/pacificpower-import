@@ -6,21 +6,40 @@ add-on. Temporary workaround until PacifiCorp ships Green Button Connect.
 
 ## Layout
 
+HA add-on repository — repo root has `repository.yaml`, add-on lives in
+its own subdirectory (HA supervisor requires this).
+
 ```
-src/pacificpower_import/
-  espi.py       ESPI (NAESB Green Button) XML parser
-  scraper.py    Playwright: login + trigger download on the portal
-  ha_client.py  HA WebSocket client (recorder/import_statistics)
-  state.py     /data/state.json bookkeeping (cumulative Wh, last run)
-  __main__.py   CLI orchestrator: scraper → parser → HA import
-config.yaml     HA add-on manifest (options schema, security flags)
-Dockerfile      Add-on container build
-run.sh          Entrypoint (options → backfill → supercronic)
-entrypoint.sh   Root-level shim that chowns /data + drops to pwuser
-apparmor.txt    AppArmor profile
-build.yaml      Add-on build metadata
-tests/          pytest; fixtures/ has a real captured ESPI XML
+<repo-root>/                       ← github.com/nburns/pacificpower-import
+├── README.md                       (GitHub landing page)
+├── LICENSE
+├── AGENTS.md                       (this file)
+├── repository.yaml                 (HA add-on repository metadata)
+└── pacificpower_import/            ← the actual add-on
+    ├── config.yaml                 HA add-on manifest (options, security)
+    ├── Dockerfile                  Container build
+    ├── build.yaml                  Add-on base image mapping
+    ├── run.sh                      Entrypoint (options → backfill → cron)
+    ├── entrypoint.sh               Root shim: chown /data + drop to pwuser
+    ├── apparmor.txt                AppArmor profile
+    ├── DOCS.md                     User-facing docs (HA add-on info tab)
+    ├── CHANGELOG.md
+    ├── README.md                   Short add-on README (HA info tab)
+    ├── pyproject.toml              uv-managed Python project
+    ├── uv.lock
+    ├── src/pacificpower_import/
+    │   ├── espi.py                 ESPI (NAESB Green Button) XML parser
+    │   ├── scraper.py              Playwright: login + download
+    │   ├── ha_client.py            HA WebSocket import_statistics client
+    │   ├── state.py                /data/state.json bookkeeping
+    │   └── __main__.py             CLI: --mode backfill|daily
+    └── tests/
+        ├── test_espi.py
+        └── fixtures/               real (sanitized) ESPI XML samples
 ```
+
+**All dev commands run from `pacificpower_import/pacificpower_import/`
+(the add-on subdir with pyproject.toml).**
 
 ## Setup
 
