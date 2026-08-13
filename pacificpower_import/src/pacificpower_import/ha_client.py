@@ -117,6 +117,30 @@ class HAClient:
             "statistic_ids": statistic_ids,
         })
 
+    async def touch_heartbeat(self, entity_id: str) -> None:
+        """Set an input_datetime helper to now. Used as a heartbeat so a
+        template binary_sensor + alert in HA can detect a stale importer.
+        No-op (logs only) if the helper doesn't exist — user hasn't set
+        it up yet."""
+        from datetime import datetime, timezone
+        try:
+            await self._call({
+                "type": "call_service",
+                "domain": "input_datetime",
+                "service": "set_datetime",
+                "target": {"entity_id": entity_id},
+                "service_data": {
+                    "datetime": datetime.now(timezone.utc).astimezone().isoformat(),
+                },
+            })
+        except Exception as e:
+            # Very common: helper not created yet. Don't fail the import.
+            import logging
+            logging.getLogger(__name__).info(
+                "heartbeat skipped (%s not found or service failed): %s",
+                entity_id, e,
+            )
+
     async def list_statistic_ids(self, statistic_type: str = "sum") -> list[dict[str, Any]]:
         """List known statistic ids (for verification)."""
         reply = await self._call(

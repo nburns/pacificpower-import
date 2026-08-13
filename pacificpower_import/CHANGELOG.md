@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Emit a heartbeat to `input_datetime.pacificpower_last_import` after
+  every successful run. Pair with a template binary_sensor + HA alert
+  to detect stale imports. No-op if the helper doesn't exist.
+
 ## 0.2.0
 
 - Also import **billed cost** as `pacificpower:electric_cost` (USD).
