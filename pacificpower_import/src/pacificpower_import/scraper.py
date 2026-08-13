@@ -157,15 +157,44 @@ class PacificPowerScraper:
         await page.wait_for_load_state("networkidle")
 
     async def _set_ending_date(self, page: Page, d: date) -> None:
-        # The "ending on" date input is a mat-input with an attached
-        # datepicker. Angular Material marks these with aria-haspopup=true,
-        # which is unique on this page.
-        date_input = page.locator('input[matinput][aria-haspopup="true"]').first
-        await date_input.wait_for(state="visible", timeout=30_000)
+        # The "ending on" date input's attributes vary by selected period
+        # (Angular re-renders it). Try several selectors and if none match,
+        # continue with whatever the portal's default ending date is.
+        candidates = [
+            'input[placeholder="Show usage through :"]',
+            'input[matinput][aria-haspopup="true"]',
+            'input[matinput][min][max]',
+            'input.mat-input-element[matinput]:not([type="hidden"])',
+        ]
+        date_input = None
+        for sel in candidates:
+            try:
+                loc = page.locator(sel).first
+                await loc.wait_for(state="visible", timeout=8_000)
+                date_input = loc
+                log.info("date input matched selector: %s", sel)
+                break
+            except Exception:
+                continue
+
+        if date_input is None:
+            debug = Path("/data/date-input-debug.html")
+            try:
+                debug.parent.mkdir(parents=True, exist_ok=True)
+                debug.write_text(await page.content())
+                log.warning("date input not found; dumped page to %s; "
+                            "downloading with portal default date", debug)
+            except Exception:
+                log.warning("date input not found; downloading with portal default date")
+            return
+
         formatted = f"{d.month}/{d.day}/{d.year}"
-        await date_input.fill(formatted)
-        await date_input.press("Enter")
-        await page.wait_for_load_state("networkidle")
+        try:
+            await date_input.fill(formatted)
+            await date_input.press("Enter")
+            await page.wait_for_load_state("networkidle")
+        except Exception as e:
+            log.warning("failed to set ending date (%s); using portal default", e)
 
 
 async def download_range(

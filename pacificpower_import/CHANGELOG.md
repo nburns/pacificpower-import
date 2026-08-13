@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1
+
+- Date input selector is now resilient across period modes ("Two Year"
+  backfill was failing where "One Day" worked because Angular re-renders
+  the input with different attributes). Falls back to the portal's
+  default ending date if no selector matches.
+- Dumps `/data/date-input-debug.html` on selector miss for easier
+  troubleshooting.
+
 ## 0.1.0
 
 Initial release.
