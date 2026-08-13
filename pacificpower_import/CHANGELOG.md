@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.2
+
+- Bill-history scrape now clicks the portal's "SHOW ALL" link after
+  expanding the date range. Previously we only got page 1 (10 rows)
+  of a paginated table, which for accounts with a couple of years of
+  history meant just 3 bills — leaving most of the cost stat empty.
+  Now we pull the full history (~24 bills for 2 years).
+- `BACKFILL_VERSION` bumped to 5 to auto-trigger a re-backfill and
+  populate the full cost history.
+
 ## 0.2.1
 
 - Emit a heartbeat to `input_datetime.pacificpower_last_import` after

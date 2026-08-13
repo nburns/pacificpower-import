@@ -118,6 +118,7 @@ class PacificPowerScraper:
             expanded_rows: list[list[str]] = []
             try:
                 await self._expand_history_range(page, years_back)
+                await self._show_all_history(page)
                 expanded_rows = await self._scrape_history_rows(page)
             except Exception as e:
                 log.warning("bill-history date-range expansion failed: %s", e)
@@ -138,6 +139,19 @@ class PacificPowerScraper:
             "table tbody tr",
             "els => els.map(tr => [...tr.querySelectorAll('td')].map(td => td.innerText.trim()))",
         )
+
+    async def _show_all_history(self, page: Page) -> None:
+        """The billing table paginates 10 rows/page with a 'SHOW ALL' link
+        at the bottom. Click it so we scrape every row, not just page 1."""
+        try:
+            show_all = page.get_by_text("SHOW ALL", exact=True).first
+            await show_all.wait_for(state="visible", timeout=5_000)
+            await show_all.click()
+            await page.wait_for_load_state("networkidle")
+            log.info("clicked SHOW ALL — full bill history loaded")
+        except Exception as e:
+            log.info("SHOW ALL not present or click failed (%s); "
+                     "continuing with visible page", e)
 
     async def _expand_history_range(self, page: Page, years_back: int) -> None:
         """Set From = today - years_back, To = today; click UPDATE."""

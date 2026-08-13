@@ -23,7 +23,7 @@ log = logging.getLogger("pacificpower_import")
 # clearing prior statistics and re-importing. v0.1.1 used a single
 # "Two Year" download which returned monthly-granularity readings;
 # v0.1.2 iterates "One Month" downloads for daily granularity.
-BACKFILL_VERSION = 4
+BACKFILL_VERSION = 5
 
 # Both backfill and daily use "One Month" (returns 30 days of daily
 # intervals). Backfill iterates back 25 times to cover ~2 years.

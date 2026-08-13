@@ -30,7 +30,7 @@ fi
 # Bump this when the backfill strategy changes incompatibly. Startup
 # triggers a fresh backfill (which clears prior stats first) when the
 # saved version is below this number.
-CURRENT_BACKFILL_VERSION=4
+CURRENT_BACKFILL_VERSION=5
 SAVED_BACKFILL_VERSION=$(jq -r '.backfill_version // 0' "${STATE_FILE}" 2>/dev/null || echo 0)
 
 if [[ "${RUN_BACKFILL}" == "true" && "${SAVED_BACKFILL_VERSION}" -lt "${CURRENT_BACKFILL_VERSION}" ]]; then
