@@ -1,5 +1,5 @@
 name: Pacific Power Import
-version: "0.1.4"
+version: "0.2.0"
 slug: pacificpower_import
 description: Pull Pacific Power Green Button data into Home Assistant long-term statistics.
 url: https://github.com/nburns/pacificpower-import
@@ -37,6 +37,8 @@ options:
   meter_id: ""
   statistic_id: "pacificpower:electric_consumption"
   statistic_name: "Pacific Power electric consumption"
+  cost_statistic_id: "pacificpower:electric_cost"
+  cost_statistic_name: "Pacific Power electric cost"
   daily_schedule: "0 6 * * *"
   run_backfill_on_start: true
 schema:
@@ -45,5 +47,7 @@ schema:
   meter_id: str?
   statistic_id: str
   statistic_name: str
+  cost_statistic_id: str
+  cost_statistic_name: str
   daily_schedule: str
   run_backfill_on_start: bool

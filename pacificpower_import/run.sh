@@ -15,6 +15,8 @@ export PP_PASSWORD=$(jq -r '.password' "${OPTIONS}")
 export PP_METER_ID=$(jq -r '.meter_id // empty' "${OPTIONS}")
 export STATISTIC_ID=$(jq -r '.statistic_id' "${OPTIONS}")
 export STATISTIC_NAME=$(jq -r '.statistic_name' "${OPTIONS}")
+export COST_STATISTIC_ID=$(jq -r '.cost_statistic_id' "${OPTIONS}")
+export COST_STATISTIC_NAME=$(jq -r '.cost_statistic_name' "${OPTIONS}")
 export DATA_DIR=/data
 
 RUN_BACKFILL=$(jq -r '.run_backfill_on_start' "${OPTIONS}")
@@ -28,7 +30,7 @@ fi
 # Bump this when the backfill strategy changes incompatibly. Startup
 # triggers a fresh backfill (which clears prior stats first) when the
 # saved version is below this number.
-CURRENT_BACKFILL_VERSION=3
+CURRENT_BACKFILL_VERSION=4
 SAVED_BACKFILL_VERSION=$(jq -r '.backfill_version // 0' "${STATE_FILE}" 2>/dev/null || echo 0)
 
 if [[ "${RUN_BACKFILL}" == "true" && "${SAVED_BACKFILL_VERSION}" -lt "${CURRENT_BACKFILL_VERSION}" ]]; then

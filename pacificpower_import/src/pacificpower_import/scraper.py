@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -23,6 +24,7 @@ from playwright.async_api import BrowserContext, Download, Page, async_playwrigh
 LOGIN_URL = "https://csapps.pacificpower.net/idm/guest-pay-login"
 DASHBOARD_URL = "https://csapps.pacificpower.net/secure/my-account/dashboard"
 ENERGY_USAGE_URL = "https://csapps.pacificpower.net/secure/my-account/energy-usage"
+BILLING_HISTORY_URL = "https://csapps.pacificpower.net/secure/my-account/billing-payment-history"
 
 Period = Literal["Two Year", "One Year", "One Month", "One Week", "One Day"]
 
@@ -36,6 +38,33 @@ class ScraperOptions:
     storage_dir: Path  # persistent context dir (cookies + local storage)
     headless: bool = True
     meter_id: str | None = None  # if set, match against the meter dropdown text
+
+
+@dataclass(frozen=True)
+class Bill:
+    """One 'Regular Bill' row from the billing-payment-history table."""
+    bill_date: date
+    amount_usd: float
+    description: str
+
+
+def _parse_bill_row(cells: list[str]) -> Bill | None:
+    """Table columns are Date | Description | Amount (+ trailing MORE cell).
+    We keep only rows whose description contains 'Bill' — 'Regular Bill',
+    'Adjustment Bill', etc. — and skip payments/refunds."""
+    if len(cells) < 3:
+        return None
+    date_str, desc, amount_str = cells[0], cells[1], cells[2]
+    if "bill" not in desc.lower():
+        return None
+    try:
+        d = datetime.strptime(date_str, "%m/%d/%y").date()
+    except ValueError:
+        return None
+    m = re.search(r"-?\d[\d,]*\.\d{2}", amount_str.replace(",", ""))
+    if not m:
+        return None
+    return Bill(bill_date=d, amount_usd=float(m.group(0)), description=desc)
 
 
 class PacificPowerScraper:
@@ -69,6 +98,63 @@ class PacificPowerScraper:
             await self._ctx.close()
         if self._pw is not None:
             await self._pw.stop()
+
+    async def fetch_bill_history(self, years_back: int = 2) -> list["Bill"]:
+        """Scrape the billing-payment-history table for bills (billed amount).
+        Expands the From/To date range to years_back years so we get more
+        than just the last few bills. Payment rows are skipped."""
+        assert self._ctx is not None
+        page = await self._ctx.new_page()
+        try:
+            await self._ensure_logged_in(page)
+            await page.goto(BILLING_HISTORY_URL, wait_until="networkidle")
+            await page.wait_for_selector("table tbody tr", timeout=30_000)
+
+            # Always scrape the default view first as a guaranteed baseline.
+            default_rows = await self._scrape_history_rows(page)
+
+            # Best-effort date-range expansion — if it fails or returns fewer
+            # rows, fall back to the default view.
+            expanded_rows: list[list[str]] = []
+            try:
+                await self._expand_history_range(page, years_back)
+                expanded_rows = await self._scrape_history_rows(page)
+            except Exception as e:
+                log.warning("bill-history date-range expansion failed: %s", e)
+
+            rows = expanded_rows if len(expanded_rows) > len(default_rows) else default_rows
+            log.info("scraped %d billing-history rows (default=%d, expanded=%d)",
+                     len(rows), len(default_rows), len(expanded_rows))
+            return [b for b in (_parse_bill_row(r) for r in rows) if b is not None]
+        finally:
+            await page.close()
+
+    async def _scrape_history_rows(self, page: Page) -> list[list[str]]:
+        try:
+            await page.wait_for_selector("table tbody tr", timeout=10_000)
+        except Exception:
+            return []
+        return await page.eval_on_selector_all(
+            "table tbody tr",
+            "els => els.map(tr => [...tr.querySelectorAll('td')].map(td => td.innerText.trim()))",
+        )
+
+    async def _expand_history_range(self, page: Page, years_back: int) -> None:
+        """Set From = today - years_back, To = today; click UPDATE."""
+        today = date.today()
+        from_d = today.replace(year=today.year - years_back)
+        # Both From and To use `matinput[aria-haspopup="true"]` (mat-datepicker).
+        pickers = page.locator('input[matinput][aria-haspopup="true"]')
+        from_input = pickers.nth(0)
+        to_input = pickers.nth(1)
+        await from_input.wait_for(state="visible", timeout=10_000)
+        await from_input.fill(from_d.strftime("%m/%d/%Y"))
+        await to_input.fill(today.strftime("%m/%d/%Y"))
+        # UPDATE button is a mat-raised-button. Use text since it's unique
+        # on this page (the other Update-labelled controls are elsewhere).
+        await page.locator("button.mat-raised-button", has_text="UPDATE").first.click()
+        await page.wait_for_load_state("networkidle")
+        log.info("expanded bill-history range: %s → %s", from_d, today)
 
     async def download_greenbutton(
         self,

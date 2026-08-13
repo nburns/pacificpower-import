@@ -9,9 +9,11 @@ import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from datetime import UTC
+
 from .espi import IntervalReading, UsagePoint, parse_file
 from .ha_client import HAClient, StatisticEntry
-from .scraper import PacificPowerScraper, Period, ScraperOptions
+from .scraper import Bill, PacificPowerScraper, Period, ScraperOptions
 from .state import State
 
 log = logging.getLogger("pacificpower_import")
@@ -21,7 +23,7 @@ log = logging.getLogger("pacificpower_import")
 # clearing prior statistics and re-importing. v0.1.1 used a single
 # "Two Year" download which returned monthly-granularity readings;
 # v0.1.2 iterates "One Month" downloads for daily granularity.
-BACKFILL_VERSION = 3
+BACKFILL_VERSION = 4
 
 # Both backfill and daily use "One Month" (returns 30 days of daily
 # intervals). Backfill iterates back 25 times to cover ~2 years.
@@ -68,8 +70,35 @@ async def _download_range(
     return paths
 
 
+def _bills_to_daily_cost_entries(bills: list[Bill]) -> list[StatisticEntry]:
+    """Spread each bill's amount evenly across the days since the prior bill
+    so the Energy dashboard shows smooth daily cost bars instead of monthly
+    spikes. Older bills are dropped if we can't infer their period (i.e.
+    the very oldest bill in the history)."""
+    if not bills:
+        return []
+    bills = sorted(bills, key=lambda b: b.bill_date)
+    entries: list[StatisticEntry] = []
+    running = 0.0
+    for prev, curr in zip(bills, bills[1:]):
+        span_days = (curr.bill_date - prev.bill_date).days
+        if span_days <= 0:
+            continue
+        per_day = curr.amount_usd / span_days
+        d = prev.bill_date
+        for _ in range(span_days):
+            d += timedelta(days=1)
+            running += per_day
+            entries.append(StatisticEntry(
+                start=datetime(d.year, d.month, d.day, tzinfo=UTC),
+                state=per_day, sum=running,
+            ))
+    return entries
+
+
 async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
-              statistic_id: str, statistic_name: str) -> None:
+              statistic_id: str, statistic_name: str,
+              cost_statistic_id: str, cost_statistic_name: str) -> None:
     state = State.load(data_dir / "state.json")
     dest_dir = data_dir / "downloads"
 
@@ -86,6 +115,11 @@ async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
 
     async with PacificPowerScraper(opts) as scraper:
         xml_paths = await _download_range(scraper, ending_dates=ending_dates, dest_dir=dest_dir)
+        try:
+            bills = await scraper.fetch_bill_history()
+        except Exception as e:
+            log.warning("bill history fetch failed: %s", e)
+            bills = []
 
     if not xml_paths:
         log.error("No downloads succeeded — nothing to import")
@@ -116,8 +150,9 @@ async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
     # stale mixed-granularity leftovers behind.
     async with ha:
         if mode == "backfill":
-            log.info("clearing existing statistics for %s before backfill", statistic_id)
-            await ha.clear_statistics([statistic_id])
+            log.info("clearing existing statistics for %s + %s before backfill",
+                     statistic_id, cost_statistic_id)
+            await ha.clear_statistics([statistic_id, cost_statistic_id])
             baseline_wh = 0.0
             baseline_start: datetime | None = None
         else:
@@ -150,7 +185,22 @@ async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
             source=statistic_id.split(":", 1)[0],
             stats=entries,
         )
-    log.info("Imported %d statistics into HA (%s)", len(entries), statistic_id)
+        log.info("Imported %d consumption statistics into HA (%s)",
+                 len(entries), statistic_id)
+
+        cost_entries = _bills_to_daily_cost_entries(bills)
+        if cost_entries:
+            await ha.import_statistics(
+                statistic_id=cost_statistic_id,
+                name=cost_statistic_name,
+                unit="USD",
+                source=cost_statistic_id.split(":", 1)[0],
+                stats=cost_entries,
+            )
+            log.info("Imported %d cost statistics into HA (%s) from %d bills",
+                     len(cost_entries), cost_statistic_id, len(bills))
+        else:
+            log.info("No cost entries built (need ≥2 bills to compute per-day cost)")
 
     # Persist state.
     now = datetime.now().astimezone()
@@ -180,6 +230,10 @@ def main() -> None:
                         default=os.environ.get("STATISTIC_ID", "pacificpower:electric_consumption"))
     parser.add_argument("--statistic-name",
                         default=os.environ.get("STATISTIC_NAME", "Pacific Power electric consumption"))
+    parser.add_argument("--cost-statistic-id",
+                        default=os.environ.get("COST_STATISTIC_ID", "pacificpower:electric_cost"))
+    parser.add_argument("--cost-statistic-name",
+                        default=os.environ.get("COST_STATISTIC_NAME", "Pacific Power electric cost"))
     # Scraper opts
     parser.add_argument("--username", default=os.environ.get("PP_USERNAME"))
     parser.add_argument("--password", default=os.environ.get("PP_PASSWORD"))
@@ -219,6 +273,7 @@ def main() -> None:
     asyncio.run(run(
         args.mode, data_dir=data_dir, opts=opts, ha=ha,
         statistic_id=args.statistic_id, statistic_name=args.statistic_name,
+        cost_statistic_id=args.cost_statistic_id, cost_statistic_name=args.cost_statistic_name,
     ))
 
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+- Also import **billed cost** as `pacificpower:electric_cost` (USD).
+  Scrapes the `Billing & payment history` table (rows tagged
+  "Regular Bill" etc.) and spreads each bill's amount across the days
+  since the previous bill, so the HA Energy dashboard shows smooth
+  daily cost bars instead of monthly spikes.
+- Best-effort date-range expansion (From/To → today − 2y) to fetch
+  more history than the default view.
+- New options: `cost_statistic_id`, `cost_statistic_name`.
+- `BACKFILL_VERSION` bumped to 4 → auto-triggers re-backfill on upgrade
+  so the new cost stat is populated from historical bills.
+
 ## 0.1.4
 
 - Fix backfill: prior versions saved every download to the same filename
