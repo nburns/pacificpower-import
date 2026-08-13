@@ -100,8 +100,13 @@ class PacificPowerScraper:
                 # no href, so role=link doesn't always resolve. Match on text.
                 await page.get_by_text("DOWNLOAD GREEN BUTTON DATA", exact=True).first.click()
             download: Download = await dl_info.value
-            suggested = download.suggested_filename or f"greenbutton_{ending_on.isoformat()}.xml"
-            dest = dest_dir / suggested
+            # Portal's suggested_filename is always today's date regardless of
+            # what date range we requested — a plain sequential backfill would
+            # therefore overwrite every earlier file. Prefix with the requested
+            # ending date + period to keep each download distinct on disk.
+            suggested = download.suggested_filename or "greenbutton.xml"
+            period_slug = period.replace(" ", "").lower()
+            dest = dest_dir / f"{ending_on.isoformat()}_{period_slug}_{suggested}"
             await download.save_as(dest)
             log.info("Downloaded Green Button XML → %s (%d bytes)", dest, dest.stat().st_size)
             return dest

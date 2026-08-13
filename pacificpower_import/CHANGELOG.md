@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.4
+
+- Fix backfill: prior versions saved every download to the same filename
+  because the portal always names the file with today's date regardless
+  of the requested range. All 25 monthly iterations therefore overwrote
+  the same file on disk, leaving only the last (current month) at
+  parse time — the backfill silently returned just ~30 days.
+- Each download now saves as `<ending_date>_<period>_<original>.xml`.
+- Bumps `BACKFILL_VERSION` to 3 so the fix triggers a fresh backfill
+  automatically on upgrade (no manual state reset needed).
+
 ## 0.1.3
 
 - AppArmor profile now actually loads on HA OS. Previous versions
