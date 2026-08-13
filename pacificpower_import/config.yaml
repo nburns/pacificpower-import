@@ -1,5 +1,5 @@
 name: Pacific Power Import
-version: "0.2.2"
+version: "0.2.3"
 slug: pacificpower_import
 description: Pull Pacific Power Green Button data into Home Assistant long-term statistics.
 url: https://github.com/nburns/pacificpower-import

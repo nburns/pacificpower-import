@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Log helper — Python logging emits timestamps; make our echo lines match.
+ts() { echo "$(date +'%Y-%m-%d %H:%M:%S,000') INFO run.sh $*"; }
+tserr() { echo "$(date +'%Y-%m-%d %H:%M:%S,000') ERROR run.sh $*" >&2; }
+
 OPTIONS=/data/options.json
 STATE_FILE=/data/state.json
 CRONTAB=/data/crontab
 
 if [[ ! -f "${OPTIONS}" ]]; then
-  echo "error: ${OPTIONS} not found (add-on options not populated)" >&2
-  exit 1
+  tserr "${OPTIONS} not found — waiting for add-on options (supervisor will restart me when you save config)"
+  sleep infinity
 fi
 
 export PP_USERNAME=$(jq -r '.username' "${OPTIONS}")
@@ -23,8 +27,8 @@ RUN_BACKFILL=$(jq -r '.run_backfill_on_start' "${OPTIONS}")
 SCHEDULE=$(jq -r '.daily_schedule' "${OPTIONS}")
 
 if [[ -z "${PP_USERNAME}" || "${PP_USERNAME}" == "null" ]]; then
-  echo "error: username not set in add-on options" >&2
-  exit 1
+  tserr "username not set — waiting for you to configure the add-on (Configuration tab → Save; supervisor will restart me)"
+  sleep infinity
 fi
 
 # Bump this when the backfill strategy changes incompatibly. Startup
@@ -34,9 +38,9 @@ CURRENT_BACKFILL_VERSION=5
 SAVED_BACKFILL_VERSION=$(jq -r '.backfill_version // 0' "${STATE_FILE}" 2>/dev/null || echo 0)
 
 if [[ "${RUN_BACKFILL}" == "true" && "${SAVED_BACKFILL_VERSION}" -lt "${CURRENT_BACKFILL_VERSION}" ]]; then
-  echo "===> backfill needed (saved=${SAVED_BACKFILL_VERSION}, current=${CURRENT_BACKFILL_VERSION})"
+  ts "backfill needed (saved=${SAVED_BACKFILL_VERSION}, current=${CURRENT_BACKFILL_VERSION})"
   python -m pacificpower_import --mode backfill
-  echo "===> backfill done"
+  ts "backfill done"
 fi
 
 # Build a crontab for supercronic. Job invokes the same entry with mode=daily.
@@ -44,5 +48,5 @@ cat > "${CRONTAB}" <<EOF
 ${SCHEDULE} python -m pacificpower_import --mode daily
 EOF
 
-echo "===> starting supercronic with schedule: ${SCHEDULE}"
+ts "starting supercronic with schedule: ${SCHEDULE}"
 exec supercronic "${CRONTAB}"

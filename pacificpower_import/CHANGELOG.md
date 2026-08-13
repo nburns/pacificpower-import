@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3
+
+- `run.sh` now prefixes its own log lines with a matching timestamp
+  (previously bash echo lines had no timestamp, mixed awkwardly with
+  the timestamped Python logs).
+- On missing/incomplete config, log the message once and then `sleep
+  infinity` instead of exiting. Supervisor auto-restarts the add-on
+  when you save config, so exit-looping just spammed the log with
+  repeated errors.
+
 ## 0.2.2
 
 - Bill-history scrape now clicks the portal's "SHOW ALL" link after
