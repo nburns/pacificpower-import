@@ -1,0 +1,72 @@
+# Pacific Power → Home Assistant
+
+A Home Assistant add-on that pulls your Pacific Power (PacifiCorp) hourly
+electricity usage into HA's Energy dashboard.
+
+Pacific Power doesn't offer Green Button **Connect** (OAuth), which is what
+a native HA integration would use. This add-on drives the customer portal
+with a headless browser, downloads the Green Button ESPI XML, parses hourly
+`IntervalReading` entries, and inserts them as long-term statistics.
+
+## Features
+
+- Automatic hourly-granularity import into HA long-term statistics.
+- 2-year historical backfill on first run.
+- Daily incremental (default 06:00 local) with a 3-day rolling window to
+  catch late-arriving intervals.
+- Runs entirely inside your HA host — no cloud service in the middle.
+- Locked-down container: non-root, AppArmor profile, no host network / PID
+  / IPC, minimal HA API access.
+
+## Install (Home Assistant custom repository)
+
+1. In Home Assistant: **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
+2. Add: `https://github.com/nburns/pacificpower-import`
+3. Refresh the add-on store; "Pacific Power Import" appears in the list.
+4. Click **Install**.
+5. Open the **Configuration** tab; enter your Pacific Power `username` and
+   `password`. Optional: `meter_id` if you have multiple meters.
+6. **Save**, then **Start**.
+7. Watch the **Log** tab — the initial 2-year backfill takes a few minutes.
+
+## Add to the Energy dashboard
+
+1. **Settings → Dashboards → Energy → Electricity grid → Add consumption**
+2. Select "Pacific Power electric consumption" (or your custom
+   `statistic_name`).
+3. Save — historical bars appear immediately.
+
+See [DOCS.md](DOCS.md) for full options reference and troubleshooting.
+
+## Requirements
+
+- Home Assistant OS or Supervised (add-ons don't work on Container/Core).
+- A Pacific Power online account with a smart meter installed.
+- MFA disabled on the Pacific Power account (the login flow is scripted).
+
+## Security
+
+- Add-on security rating: **6/8** (AppArmor + no host access + no dangerous
+  caps). Full breakdown in [AGENTS.md](AGENTS.md).
+- Credentials live only in supervisor-encrypted options + process memory.
+- Everything after startup runs as unprivileged `pwuser`.
+
+## How it works
+
+- **Auth**: Azure B2C login is scripted (username + password inside an
+  iframe). Session is persisted between runs.
+- **Download**: The portal's own XHR body is client-side encrypted, so we
+  can't replay it with plain HTTP — we drive the UI instead.
+- **Parse**: ESPI is a NAESB Atom feed; parser is stdlib-only.
+- **Import**: HA WebSocket API's `recorder/import_statistics` accepts
+  external statistics idempotent by `(statistic_id, start)`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Contributing
+
+Issues and PRs welcome. This is a workaround; if PacifiCorp ever ships
+Green Button **Connect** (OAuth), the right long-term answer is to drop
+this add-on in favor of a native HA integration.

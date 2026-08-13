@@ -1,0 +1,49 @@
+name: Pacific Power Import
+version: "0.1.0"
+slug: pacificpower_import
+description: Pull Pacific Power Green Button data into Home Assistant long-term statistics.
+url: https://github.com/nburns/pacificpower-import
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+stage: experimental
+init: false
+# --- security lockdown ---
+# The add-on only needs to reach HA Core's WebSocket via the supervisor
+# proxy. That requires `homeassistant_api` (which populates SUPERVISOR_TOKEN).
+# hassio_api / auth_api / docker_api are all left off deliberately.
+homeassistant_api: true
+hassio_api: false
+auth_api: false
+docker_api: false
+host_network: false
+host_pid: false
+host_ipc: false
+host_dbus: false
+privileged: []      # no capabilities
+devices: []         # no host device access
+usb: false
+uart: false
+kernel_modules: false
+full_access: false
+apparmor: true      # loads apparmor.txt
+ingress: false
+panel_icon: mdi:flash
+options:
+  username: ""
+  password: ""
+  meter_id: ""
+  statistic_id: "pacificpower:electric_consumption"
+  statistic_name: "Pacific Power electric consumption"
+  daily_schedule: "0 6 * * *"
+  run_backfill_on_start: true
+schema:
+  username: str
+  password: password
+  meter_id: str?
+  statistic_id: str
+  statistic_name: str
+  daily_schedule: str
+  run_backfill_on_start: bool

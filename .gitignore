@@ -1,0 +1,28 @@
+# Local secrets — never commit
+.env
+**/.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# uv / venv
+.venv/
+**/.venv/
+
+# Test / cache
+.pytest_cache/
+**/.pytest_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Local runtime state (browser context, downloaded XMLs)
+/tmp-*

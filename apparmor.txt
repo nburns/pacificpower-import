@@ -1,0 +1,99 @@
+#include <tunables/global>
+
+profile pacificpower_import flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+  #include <abstractions/python>
+
+  # Deny sensitive kernel interfaces and mount operations outright.
+  deny mount,
+  deny remount,
+  deny umount,
+  deny /proc/*/mem rw,
+  deny /proc/kcore rwklx,
+  deny /proc/sysrq-trigger rwklx,
+  deny /proc/mem rwklx,
+  deny /proc/kmem rwklx,
+  deny /sys/[^f]** wklx,
+  deny /sys/f[^s]** wklx,
+  deny /sys/fs/[^c]** wklx,
+  deny /sys/fs/c[^g]** wklx,
+  deny /sys/fs/cg[^r]** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  # Network access (outbound to Pacific Power + supervisor).
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+  network unix,
+
+  # File access.
+  # Read anywhere in the container image (Chromium/Playwright walk /opt,
+  # /usr/lib, etc.).
+  file,
+  /proc/*/status r,
+  /proc/*/stat r,
+  /proc/*/fd/ r,
+  /proc/sys/kernel/core_pattern r,
+
+  # Only /data (persistent), /tmp, /run and the browser cache dirs are writable.
+  deny /etc/** w,
+  deny /root/** w,
+  deny /var/log/** w,
+  deny /usr/** w,
+  deny /opt/** w,
+  deny /home/** w,
+  deny /bin/** w,
+  deny /sbin/** w,
+  deny /lib*/** w,
+
+  /data/** rw,
+  /tmp/** rwk,
+  /run/** rwk,
+
+  # Chromium/Playwright need to write to shared memory + user data dir.
+  /dev/shm/** rwk,
+  owner /root/.config/** rwk,
+  owner /root/.cache/** rwk,
+  owner /home/*/.config/** rwk,
+  owner /home/*/.cache/** rwk,
+
+  # Signals (supercronic + chromium child processes).
+  signal (send) set=(kill,term,int,hup,cont,usr1,usr2,chld,pipe) peer=pacificpower_import,
+  signal (receive) set=(term,int,hup,cont,usr1,usr2,chld,pipe),
+
+  # Chromium spawns worker processes with ptrace (its own sandbox mechanism).
+  ptrace (read,trace) peer=pacificpower_import,
+
+  # Execute our own binaries + interpreters.
+  /usr/bin/** ix,
+  /usr/sbin/** ix,
+  /usr/local/bin/** ix,
+  /usr/bin/python3* ix,
+  /usr/local/bin/uv ix,
+  /usr/local/bin/supercronic ix,
+  /usr/bin/jq ix,
+  /usr/sbin/gosu ix,
+
+  # Chromium binary + its zygote/renderer children.
+  /ms-playwright/** ix,
+  /ms-playwright/**/chrome ix,
+  /ms-playwright/**/chrome-sandbox ix,
+  /ms-playwright/**/chrome_crashpad_handler ix,
+
+  # Bash entrypoints.
+  /entrypoint.sh ix,
+  /run.sh ix,
+  /usr/bin/bash ix,
+  /bin/bash ix,
+
+  # Setuid/setgid is required by gosu at startup only.
+  capability setuid,
+  capability setgid,
+  capability dac_override,
+  capability chown,
+  capability fowner,
+}
