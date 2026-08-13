@@ -25,11 +25,16 @@ if [[ -z "${PP_USERNAME}" || "${PP_USERNAME}" == "null" ]]; then
   exit 1
 fi
 
-# Initial backfill: run only if no state exists AND user opted in.
-if [[ "${RUN_BACKFILL}" == "true" && ! -f "${STATE_FILE}" ]]; then
-  echo "===> initial backfill starting"
+# Bump this when the backfill strategy changes incompatibly. Startup
+# triggers a fresh backfill (which clears prior stats first) when the
+# saved version is below this number.
+CURRENT_BACKFILL_VERSION=2
+SAVED_BACKFILL_VERSION=$(jq -r '.backfill_version // 0' "${STATE_FILE}" 2>/dev/null || echo 0)
+
+if [[ "${RUN_BACKFILL}" == "true" && "${SAVED_BACKFILL_VERSION}" -lt "${CURRENT_BACKFILL_VERSION}" ]]; then
+  echo "===> backfill needed (saved=${SAVED_BACKFILL_VERSION}, current=${CURRENT_BACKFILL_VERSION})"
   python -m pacificpower_import --mode backfill
-  echo "===> initial backfill done"
+  echo "===> backfill done"
 fi
 
 # Build a crontab for supercronic. Job invokes the same entry with mode=daily.

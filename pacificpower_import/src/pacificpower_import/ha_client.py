@@ -106,6 +106,17 @@ class HAClient:
             }
         )
 
+    async def clear_statistics(self, statistic_ids: list[str]) -> None:
+        """Delete all stored points for the given external statistic ids.
+        Used before a fresh backfill so mixed-granularity leftovers don't
+        double-count."""
+        if not statistic_ids:
+            return
+        await self._call({
+            "type": "recorder/clear_statistics",
+            "statistic_ids": statistic_ids,
+        })
+
     async def list_statistic_ids(self, statistic_type: str = "sum") -> list[dict[str, Any]]:
         """List known statistic ids (for verification)."""
         reply = await self._call(

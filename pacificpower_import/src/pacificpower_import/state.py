@@ -16,6 +16,10 @@ class State:
     # Latest interval start we've imported. Used to compute the running sum
     # without re-reading old data.
     latest_interval_start: datetime | None = None
+    # Bump when the backfill strategy changes in an incompatible way — an
+    # existing state with an older version triggers a fresh backfill on
+    # startup (which clears prior statistics first).
+    backfill_version: int = 0
     # Extra metadata (e.g. discovered account/meter identifiers) for future
     # use; unstructured to avoid churn.
     extras: dict = field(default_factory=dict)
@@ -30,6 +34,7 @@ class State:
             last_incremental=_parse_dt(raw.get("last_incremental")),
             cumulative_wh=float(raw.get("cumulative_wh", 0.0)),
             latest_interval_start=_parse_dt(raw.get("latest_interval_start")),
+            backfill_version=int(raw.get("backfill_version", 0)),
             extras=raw.get("extras", {}),
         )
 
