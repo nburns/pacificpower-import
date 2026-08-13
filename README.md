@@ -18,10 +18,20 @@ with a headless browser, downloads the Green Button ESPI XML, parses hourly
 - Locked-down container: non-root, AppArmor profile, no host network / PID
   / IPC, minimal HA API access.
 
-## Install (Home Assistant custom repository)
+## Install
+
+One-click (uses [my.home-assistant.io](https://my.home-assistant.io) —
+opens the "Add repository" dialog in your HA):
+
+[![Add repository to my Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fnburns%2Fpacificpower-import)
+
+Or manually:
 
 1. In Home Assistant: **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
-2. Add: `https://github.com/nburns/pacificpower-import`
+2. Add: `https://github.com/nburns/pacificpower-import` → **Add**
+
+Then:
+
 3. Refresh the add-on store; "Pacific Power Import" appears in the list.
 4. Click **Install**.
 5. Open the **Configuration** tab; enter your Pacific Power `username` and
