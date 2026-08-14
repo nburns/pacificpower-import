@@ -8,6 +8,15 @@ a native HA integration would use. This add-on drives the customer portal
 with a headless browser, downloads the Green Button ESPI XML, parses hourly
 `IntervalReading` entries, and inserts them as long-term statistics.
 
+## Data staleness
+
+Pacific Power publishes Green Button interval data with roughly a
+**24-hour lag** — yesterday's hourly readings appear on the portal
+mid-day today. The daily cron fires at 06:00 local and pulls a
+3-day rolling window, so consumption data is typically **1-2 days
+behind real time**. Billed cost updates only when a new bill posts
+(**~monthly**), so the cost stat trails consumption by up to 30 days.
+
 ## Features
 
 - Automatic hourly-granularity import into HA long-term statistics.
