@@ -55,7 +55,7 @@ Then:
    `statistic_name`).
 3. Save — historical bars appear immediately.
 
-See [DOCS.md](DOCS.md) for full options reference and troubleshooting.
+See [DOCS.md](pacificpower_import/DOCS.md) for full options reference and troubleshooting.
 
 ## Requirements
 
