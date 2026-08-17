@@ -17,6 +17,10 @@ mid-day today. The daily cron fires at 06:00 local and pulls a
 behind real time**. Billed cost updates only when a new bill posts
 (**~monthly**), so the cost stat trails consumption by up to 30 days.
 
+Because of this lag, the HA Energy dashboard's default **Today** view
+will look empty — the newest data is yesterday. Change the range to
+**Week** (or further back) to see the imported bars.
+
 ## Features
 
 - Automatic hourly-granularity import into HA long-term statistics.
