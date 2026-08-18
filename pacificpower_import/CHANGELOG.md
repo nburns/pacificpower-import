@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0
+
+- Add opt-in hourly-granularity mode (`hourly_mode: true`). When enabled,
+  a trickle job downloads one "One Day" XML per trigger (24 hourly readings)
+  and accumulates them on disk without touching HA statistics. Once the
+  requested window is covered, a one-time switchover clears existing
+  statistics and re-imports everything at hourly grain. After switchover,
+  the daily cron fetches yesterday's one-day XML (24 rows per run).
+- New options: `hourly_mode`, `hourly_backfill_days_per_hour` (default 4,
+  one download every 15 minutes), `hourly_backfill_window_days` (default
+  730). At the default rate the trickle covers two years in ~7.5 days.
+- Flipping `hourly_mode` in either direction automatically clears statistics
+  and triggers a fresh backfill at the new granularity on next start. No
+  manual state reset needed.
+- `state.json` gains three new fields: `hourly_backfill_cursor`,
+  `hourly_backfill_complete`, and `last_mode`. Old state files load cleanly
+  (missing fields default to off/false/null).
+
 ## 0.2.3
 
 - `run.sh` now prefixes its own log lines with a matching timestamp

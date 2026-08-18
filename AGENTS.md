@@ -32,9 +32,10 @@ its own subdirectory (HA supervisor requires this).
     │   ├── scraper.py              Playwright: login + download
     │   ├── ha_client.py            HA WebSocket import_statistics client
     │   ├── state.py                /data/state.json bookkeeping
-    │   └── __main__.py             CLI: --mode backfill|daily
+    │   └── __main__.py             CLI: --mode backfill|daily|hourly-trickle|hourly-switchover|hourly-daily
     └── tests/
         ├── test_espi.py
+        ├── test_state.py
         └── fixtures/               real (sanitized) ESPI XML samples
 ```
 
@@ -217,6 +218,21 @@ kills it; `/tmp/pp-addon-data/` holds the state between runs.
   extend this test rather than mocking the parser.
 - No tests for `scraper.py` (browser-driven, external service) or
   `ha_client.py` (needs a live HA instance). Smoke-test both manually.
+
+## Hourly mode invariants
+
+These must hold after any edit to the hourly-mode code paths:
+
+- **Trickle writes only to disk.** `hourly-trickle` downloads XMLs to
+  `hourly_downloads/` and advances `hourly_backfill_cursor`. It must not
+  call `import_statistics` or `clear_statistics` directly (except when it
+  invokes switchover after the cursor reaches the window edge).
+- **Switchover is the only HA-mutating path during backfill.** No other
+  code path may call `clear_statistics` or `import_statistics` while
+  `hourly_backfill_complete` is false.
+- **Toggle flip clears stats.** Any time `last_mode` in state differs from
+  the active mode on startup, `run.sh` must clear statistics and reset
+  hourly backfill fields before starting the trickle. Never skip this step.
 
 ## Known gaps / next steps
 

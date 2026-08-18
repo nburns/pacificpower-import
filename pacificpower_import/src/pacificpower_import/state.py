@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -23,12 +23,19 @@ class State:
     # Extra metadata (e.g. discovered account/meter identifiers) for future
     # use; unstructured to avoid churn.
     extras: dict = field(default_factory=dict)
+    # Hourly-mode fields. All None/False when hourly_mode is off.
+    hourly_backfill_cursor: date | None = None
+    hourly_backfill_complete: bool = False
+    # Records which mode ("daily" or "hourly") state was last written under.
+    # A mismatch on startup signals a toggle flip and triggers a reset.
+    last_mode: str | None = None
 
     @classmethod
     def load(cls, path: Path) -> "State":
         if not path.exists():
             return cls()
         raw = json.loads(path.read_text())
+        cursor_raw = raw.get("hourly_backfill_cursor")
         return cls(
             last_backfill=_parse_dt(raw.get("last_backfill")),
             last_incremental=_parse_dt(raw.get("last_incremental")),
@@ -36,6 +43,9 @@ class State:
             latest_interval_start=_parse_dt(raw.get("latest_interval_start")),
             backfill_version=int(raw.get("backfill_version", 0)),
             extras=raw.get("extras", {}),
+            hourly_backfill_cursor=date.fromisoformat(cursor_raw) if cursor_raw else None,
+            hourly_backfill_complete=bool(raw.get("hourly_backfill_complete", False)),
+            last_mode=raw.get("last_mode"),
         )
 
     def save(self, path: Path) -> None:
@@ -44,6 +54,8 @@ class State:
         for k in ("last_backfill", "last_incremental", "latest_interval_start"):
             v = raw.get(k)
             raw[k] = v.isoformat() if isinstance(v, datetime) else v
+        cursor = raw.get("hourly_backfill_cursor")
+        raw["hourly_backfill_cursor"] = cursor.isoformat() if isinstance(cursor, date) else cursor
         path.write_text(json.dumps(raw, indent=2))
 
 

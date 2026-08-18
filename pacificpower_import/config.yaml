@@ -41,6 +41,9 @@ options:
   cost_statistic_name: "Pacific Power electric cost"
   daily_schedule: "0 6 * * *"
   run_backfill_on_start: true
+  hourly_mode: false
+  hourly_backfill_days_per_hour: 4
+  hourly_backfill_window_days: 730
 schema:
   username: str
   password: password
@@ -51,3 +54,6 @@ schema:
   cost_statistic_name: str
   daily_schedule: str
   run_backfill_on_start: bool
+  hourly_mode: bool
+  hourly_backfill_days_per_hour: "int(1,60)"
+  hourly_backfill_window_days: "int(1,730)"
