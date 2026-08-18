@@ -139,6 +139,10 @@ when cookies expire.
   `Dockerfile`, `build.yaml`, `README.md`, `DOCS.md`, `CHANGELOG.md`,
   `apparmor.txt`, `icon.png` (128×128), `logo.png` (250×100). Icons
   aren't checked in yet — supervisor falls back to defaults if missing.
+- **Bump `config.yaml` `version:` whenever you ship a change.** HA
+  supervisor detects updates by comparing this string, not commit
+  hashes or CHANGELOG entries. If you skip the bump the add-on store
+  will never surface the update, even after a repo reload.
 - To publish as an installable custom repository, the *parent*
   directory needs a `repository.yaml` (already at
   `../repository.yaml`).
