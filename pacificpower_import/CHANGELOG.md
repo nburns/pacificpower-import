@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- Add add-on icon (128×128 red triangle).
+
 ## 0.3.1
 
 - Add `_goto_with_retry` helper to `scraper.py`. All four `page.goto` calls
