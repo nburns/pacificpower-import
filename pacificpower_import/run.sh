@@ -9,6 +9,11 @@ OPTIONS=/data/options.json
 STATE_FILE=/data/state.json
 CRONTAB=/data/crontab
 
+mkdir -p /data/logs /data/debug
+if [ -f /data/logs/main.log ] && [ "$(stat -c%s /data/logs/main.log)" -gt 10485760 ]; then
+  tail -c 5242880 /data/logs/main.log > /data/logs/main.log.tmp && mv /data/logs/main.log.tmp /data/logs/main.log
+fi
+
 if [[ ! -f "${OPTIONS}" ]]; then
   tserr "${OPTIONS} not found — waiting for add-on options (supervisor will restart me when you save config)"
   sleep infinity
@@ -34,6 +39,11 @@ export PP_CRONTAB_PATH="${CRONTAB}"
 HOURLY_MODE=$(jq -r '.hourly_mode // false' "${OPTIONS}")
 export HOURLY_BACKFILL_DAYS_PER_HOUR=$(jq -r '.hourly_backfill_days_per_hour // 4' "${OPTIONS}")
 export HOURLY_BACKFILL_WINDOW_DAYS=$(jq -r '.hourly_backfill_window_days // 730' "${OPTIONS}")
+
+# Runtime toggle: gates both the scraper's debug-dump writes and the
+# ingress viewer's rendered content. When false, the sidebar entry still
+# resolves (server always runs) but shows a "disabled" placeholder.
+export PP_DIAGNOSTICS_ENABLED=$(jq -r '.diagnostics_enabled // false' "${OPTIONS}")
 
 if [[ -z "${PP_USERNAME}" || "${PP_USERNAME}" == "null" ]]; then
   tserr "username not set — waiting for you to configure the add-on (Configuration tab → Save; supervisor will restart me)"
@@ -106,11 +116,17 @@ ${SCHEDULE} python -m pacificpower_import --mode daily
 EOF
 fi
 
+python -m pacificpower_import.web >> /data/logs/main.log 2>&1 &
+WEB_PID=$!
+ts "ingress web server started (pid=${WEB_PID})"
+
 ts "starting supercronic with schedule from ${CRONTAB}"
 # Loop around supercronic so the hourly-trickle job can hot-swap the crontab
 # by killing supercronic; we then restart it against the rewritten file.
-while true; do
-  supercronic "${CRONTAB}" || tserr "supercronic exited with status $?"
-  ts "supercronic exited; restarting against ${CRONTAB} in 2s"
-  sleep 2
-done
+{
+  while true; do
+    supercronic "${CRONTAB}" || tserr "supercronic exited with status $?"
+    ts "supercronic exited; restarting against ${CRONTAB} in 2s"
+    sleep 2
+  done
+} 2>&1 | tee -a /data/logs/main.log

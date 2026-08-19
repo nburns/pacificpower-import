@@ -13,13 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 from playwright.async_api import BrowserContext, Download, Page, async_playwright
+
+_DEBUG_MAX_PAIRS = 20
 
 LOGIN_URL = "https://csapps.pacificpower.net/idm/guest-pay-login"
 DASHBOARD_URL = "https://csapps.pacificpower.net/secure/my-account/dashboard"
@@ -39,6 +42,36 @@ _RETRYABLE_ERRORS = (
     "ERR_NAME_NOT_RESOLVED",
 )
 _RETRY_DELAYS = (5, 15)
+
+
+def _sanitize_url_for_log(url: str) -> str:
+    """Drop query params. State/code/token params commonly land there."""
+    q = url.find("?")
+    return url if q < 0 else url[:q] + "?[stripped]"
+
+
+# JS scrub that runs in the live page before we capture the screenshot AND
+# before we serialize HTML. Blanks every input value (both the .value
+# property and the value attribute Chromium serializes in outerHTML). Also
+# strips <script> textContent because Angular apps can hold in-flight auth
+# tokens there. Runs on the live page - we're already in an error-recovery
+# path, so mutating the DOM is safe.
+_SCRUB_JS = r"""
+() => {
+  const inputs = document.querySelectorAll('input, textarea');
+  for (const el of inputs) {
+    try {
+      el.value = '';
+      el.setAttribute('value', '');
+      el.removeAttribute('data-value');
+    } catch (e) {}
+  }
+  const scripts = document.querySelectorAll('script');
+  for (const s of scripts) {
+    try { s.textContent = '/* stripped */'; } catch (e) {}
+  }
+}
+"""
 
 
 async def _goto_with_retry(
@@ -109,7 +142,15 @@ class PacificPowerScraper:
         self._ctx: BrowserContext | None = None
 
     async def __aenter__(self) -> "PacificPowerScraper":
-        self._opts.storage_dir.mkdir(parents=True, exist_ok=True)
+        sd = self._opts.storage_dir
+        if sd.exists():
+            files = list(sd.iterdir())
+            total = sum(f.stat().st_size for f in files if f.is_file())
+            log.info("storage_dir %s: exists, %d files, %.1f KB total",
+                     sd, len(files), total / 1024)
+        else:
+            log.info("storage_dir %s: does not exist (fresh context, login required)", sd)
+        sd.mkdir(parents=True, exist_ok=True)
         self._pw = await async_playwright().start()
         # Chromium's own sandbox needs CAP_SYS_ADMIN / user-ns creation which
         # the add-on doesn't grant. Container + AppArmor + non-root user
@@ -134,6 +175,67 @@ class PacificPowerScraper:
         if self._pw is not None:
             await self._pw.stop()
 
+    async def _dump_debug(self, page: Page, tag: str) -> None:
+        """Capture a screenshot + HTML dump for post-mortem debugging.
+        Never raises - errors are logged as warnings. Gated on
+        PP_DIAGNOSTICS_ENABLED so failed runs don't accrue disk usage
+        when the user hasn't opted in to diagnostics."""
+        if os.environ.get("PP_DIAGNOSTICS_ENABLED", "false").lower() != "true":
+            log.info("debug dump skipped (diagnostics disabled); tag=%s", tag)
+            return
+        try:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+            debug_dir = self._opts.storage_dir.parent / "debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            stem = f"{tag}-{ts}"
+
+            try:
+                title = await page.title()
+                log.info("debug dump: url=%s title=%r",
+                         _sanitize_url_for_log(page.url), title)
+            except Exception as exc:
+                log.warning("debug dump: could not read page url/title: %s", exc)
+
+            # Scrub DOM input values + <script> bodies BEFORE either the
+            # screenshot or the HTML dump. If the scrub itself throws, refuse
+            # the entire capture rather than risk a credential landing on
+            # disk. This is the load-bearing safeguard for the login page.
+            try:
+                await page.evaluate(_SCRUB_JS)
+            except Exception as exc:
+                log.warning("debug dump: DOM scrub failed (%s); refusing capture to protect credentials", exc)
+                return
+
+            png_path = debug_dir / f"{stem}.png"
+            try:
+                await page.screenshot(path=str(png_path))
+                log.info("debug dump: screenshot -> %s (%d bytes)", png_path, png_path.stat().st_size)
+            except Exception as exc:
+                log.warning("debug dump: screenshot failed: %s", exc)
+
+            html_path = debug_dir / f"{stem}.html"
+            try:
+                html_path.write_text(await page.content(), encoding="utf-8")
+                log.info("debug dump: HTML -> %s (%d bytes)", html_path, html_path.stat().st_size)
+            except Exception as exc:
+                log.warning("debug dump: HTML dump failed: %s", exc)
+
+            try:
+                all_files = sorted(debug_dir.iterdir(), key=lambda p: p.stat().st_mtime)
+                total_bytes = sum(f.stat().st_size for f in all_files if f.is_file())
+                log.info("debug dir total: %d files, %.1f KB", len(all_files), total_bytes / 1024)
+                pngs = sorted(debug_dir.glob("*.png"), key=lambda p: p.stat().st_mtime)
+                if len(pngs) > _DEBUG_MAX_PAIRS:
+                    for old_png in pngs[:-_DEBUG_MAX_PAIRS]:
+                        old_html = old_png.with_suffix(".html")
+                        old_png.unlink(missing_ok=True)
+                        old_html.unlink(missing_ok=True)
+            except Exception as exc:
+                log.warning("debug dump: prune/size check failed: %s", exc)
+
+        except Exception as exc:
+            log.warning("_dump_debug: unexpected error: %s", exc)
+
     async def fetch_bill_history(self, years_back: int = 2) -> list["Bill"]:
         """Scrape the billing-payment-history table for bills (billed amount).
         Expands the From/To date range to years_back years so we get more
@@ -143,7 +245,11 @@ class PacificPowerScraper:
         try:
             await self._ensure_logged_in(page)
             await _goto_with_retry(page, BILLING_HISTORY_URL)
-            await page.wait_for_selector("table tbody tr", timeout=30_000)
+            try:
+                await page.wait_for_selector("table tbody tr", timeout=30_000)
+            except Exception:
+                await self._dump_debug(page, "bill-history-timeout")
+                raise
 
             # Always scrape the default view first as a guaranteed baseline.
             default_rows = await self._scrape_history_rows(page)
@@ -221,7 +327,11 @@ class PacificPowerScraper:
             await _goto_with_retry(page, ENERGY_USAGE_URL)
             # Angular renders the controls after the initial network-idle. Wait
             # for the meter dropdown to prove the page is ready.
-            await page.locator("mat-select").first.wait_for(state="visible", timeout=30_000)
+            try:
+                await page.locator("mat-select").first.wait_for(state="visible", timeout=30_000)
+            except Exception:
+                await self._dump_debug(page, "matselect-timeout")
+                raise
 
             if self._opts.meter_id:
                 await self._select_meter(page, self._opts.meter_id)
@@ -274,6 +384,11 @@ class PacificPowerScraper:
             wait_until="networkidle",
         )
         log.info("Logged in — landed on %s", page.url)
+        assert self._ctx is not None
+        all_cookies = await self._ctx.cookies()
+        pp_cookies = [c for c in all_cookies if "pacificpower" in c.get("domain", "")]
+        log.info("cookies after login: total=%d pacificpower.net=%d",
+                 len(all_cookies), len(pp_cookies))
 
     async def _select_meter(self, page: Page, meter_id: str) -> None:
         # Meter selector is the first mat-select on the page.

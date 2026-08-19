@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.4
+
+- Add Home Assistant ingress web page (port 8099) exposing a live log tail and
+  reverse-chronological debug captures. Access via the "Pacific Power" sidebar
+  entry.
+- New `diagnostics_enabled` config option (default `false`). When off, the
+  scraper does not write debug dumps and the ingress page shows a placeholder
+  telling you how to enable it. Flip it on when you want to investigate a
+  failure, flip it off again to stop accruing disk usage.
+- Capture screenshot + HTML dump automatically on `mat-select` timeout
+  (`download_greenbutton`) and billing table timeout (`fetch_bill_history`)
+  when diagnostics is enabled. Captures are pruned to the 20 most recent pairs
+  under `/data/debug/`.
+- **Credential scrub before every capture.** A JS scrub runs against the live
+  page immediately before both the screenshot and the HTML dump: every input
+  value is blanked (property + attribute) and every `<script>` textContent is
+  stripped. If the scrub itself fails, the whole capture is refused to fail
+  safe. Login-page captures are still allowed - they just no longer contain
+  the username or password.
+- New session-state logging: storage dir file count + size at scraper startup;
+  total and `pacificpower.net`-scoped cookie count after each login. Helps
+  diagnose the "re-login every run" symptom.
+- `run.sh` tees the supercronic loop to `/data/logs/main.log` (capped at
+  ~10 MB, truncated to 5 MB on startup). Web server stdout also goes there.
+
 ## 0.3.2
 
 - Add add-on icon (128×128 red triangle).

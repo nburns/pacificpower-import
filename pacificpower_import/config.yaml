@@ -1,5 +1,5 @@
 name: Pacific Power Import
-version: "0.3.2"
+version: "0.3.4"
 slug: pacificpower_import
 description: Pull Pacific Power Green Button data into Home Assistant long-term statistics.
 url: https://github.com/nburns/pacificpower-import
@@ -29,8 +29,10 @@ uart: false
 kernel_modules: false
 full_access: false
 apparmor: true      # loads apparmor.txt
-ingress: false
+ingress: true
+ingress_port: 8099
 panel_icon: mdi:flash
+panel_title: "Pacific Power"
 options:
   username: ""
   password: ""
@@ -44,6 +46,7 @@ options:
   hourly_mode: false
   hourly_backfill_days_per_hour: 4
   hourly_backfill_window_days: 730
+  diagnostics_enabled: false
 schema:
   username: str
   password: password
@@ -57,3 +60,4 @@ schema:
   hourly_mode: bool
   hourly_backfill_days_per_hour: "int(1,60)"
   hourly_backfill_window_days: "int(1,730)"
+  diagnostics_enabled: bool
