@@ -30,6 +30,41 @@ Period = Literal["Two Year", "One Year", "One Month", "One Week", "One Day"]
 
 log = logging.getLogger(__name__)
 
+_RETRYABLE_ERRORS = (
+    "ERR_NETWORK_CHANGED",
+    "ERR_INTERNET_DISCONNECTED",
+    "ERR_TIMED_OUT",
+    "ERR_CONNECTION_RESET",
+    "ERR_ABORTED",
+    "ERR_NAME_NOT_RESOLVED",
+)
+_RETRY_DELAYS = (5, 15)
+
+
+async def _goto_with_retry(
+    page: Page,
+    url: str,
+    *,
+    tries: int = 3,
+    wait_until: str = "networkidle",
+    _delay_s: tuple[float, ...] = _RETRY_DELAYS,
+) -> None:
+    last_exc: Exception | None = None
+    for attempt in range(tries):
+        try:
+            await page.goto(url, wait_until=wait_until)
+            return
+        except Exception as exc:
+            msg = str(exc)
+            if not any(tag in msg for tag in _RETRYABLE_ERRORS):
+                raise
+            last_exc = exc
+            if attempt + 1 < tries:
+                delay = _delay_s[min(attempt, len(_delay_s) - 1)]
+                log.info("goto %s failed with transient error (%s); retrying in %ss", url, msg, delay)
+                await asyncio.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
 
 @dataclass
 class ScraperOptions:
@@ -107,7 +142,7 @@ class PacificPowerScraper:
         page = await self._ctx.new_page()
         try:
             await self._ensure_logged_in(page)
-            await page.goto(BILLING_HISTORY_URL, wait_until="networkidle")
+            await _goto_with_retry(page, BILLING_HISTORY_URL)
             await page.wait_for_selector("table tbody tr", timeout=30_000)
 
             # Always scrape the default view first as a guaranteed baseline.
@@ -183,7 +218,7 @@ class PacificPowerScraper:
         page = await self._ctx.new_page()
         try:
             await self._ensure_logged_in(page)
-            await page.goto(ENERGY_USAGE_URL, wait_until="networkidle")
+            await _goto_with_retry(page, ENERGY_USAGE_URL)
             # Angular renders the controls after the initial network-idle. Wait
             # for the meter dropdown to prove the page is ready.
             await page.locator("mat-select").first.wait_for(state="visible", timeout=30_000)
@@ -214,7 +249,7 @@ class PacificPowerScraper:
             await page.close()
 
     async def _ensure_logged_in(self, page: Page) -> None:
-        await page.goto(DASHBOARD_URL, wait_until="networkidle")
+        await _goto_with_retry(page, DASHBOARD_URL)
         if page.url.startswith(DASHBOARD_URL):
             log.info("Session restored — already logged in")
             return
@@ -222,7 +257,7 @@ class PacificPowerScraper:
         # The login form lives inside an <iframe id="loginframe"> running an
         # Azure B2C flow on login.csapps.pacificpower.net.
         log.info("Not authenticated — running login flow")
-        await page.goto(LOGIN_URL, wait_until="networkidle")
+        await _goto_with_retry(page, LOGIN_URL)
         await page.wait_for_selector("#loginframe", timeout=30_000)
 
         login_frame = page.frame_locator("#loginframe")

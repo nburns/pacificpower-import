@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.1
+
+- Add `_goto_with_retry` helper to `scraper.py`. All four `page.goto` calls
+  (dashboard, login, energy-usage, billing-history) now retry up to 3 times on
+  transient Chromium network errors (`ERR_NETWORK_CHANGED`, `ERR_INTERNET_DISCONNECTED`,
+  `ERR_TIMED_OUT`, `ERR_CONNECTION_RESET`, `ERR_ABORTED`, `ERR_NAME_NOT_RESOLVED`)
+  with 5s then 15s backoff. Non-matching errors and final failures re-raise.
+  Prevents container-boot race between Chromium launch and the network stack
+  coming up from killing an entire scheduled run.
+- Convert silent empty-result returns to `raise RuntimeError(...)` throughout
+  `__main__.py`. Affected paths: `run()` when no downloads succeed, `run()` when
+  no readings parse, `run_hourly_switchover()` when no XML files or no readings
+  are found, and `run_hourly_daily()` when the XML parse fails or yields zero
+  readings. Process now exits nonzero on these failures so cron retries within
+  the hour instead of waiting ~24h.
+
 ## 0.3.0
 
 - Add opt-in hourly-granularity mode (`hourly_mode: true`). When enabled,

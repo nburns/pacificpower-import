@@ -205,8 +205,7 @@ async def run_hourly_switchover(
 
     xml_files = sorted(hourly_dir.glob("*.xml"))
     if not xml_files:
-        log.error("hourly switchover: no XML files found in %s", hourly_dir)
-        return
+        raise RuntimeError(f"hourly switchover: no XML files found in {hourly_dir}")
 
     readings_by_start: dict[datetime, IntervalReading] = {}
     for path in xml_files:
@@ -219,8 +218,7 @@ async def run_hourly_switchover(
             readings_by_start[r.start] = r
 
     if not readings_by_start:
-        log.error("hourly switchover: no readings parsed — aborting")
-        return
+        raise RuntimeError("hourly switchover: no readings parsed from any XML file")
 
     readings = sorted(readings_by_start.values(), key=lambda r: r.start)
     log.info("hourly switchover: %d unique hourly intervals (%s → %s)",
@@ -295,13 +293,11 @@ async def run_hourly_daily(
     try:
         (up,) = parse_file(xml_path)
     except Exception as e:
-        log.error("failed to parse %s: %s", xml_path, e)
-        return
+        raise RuntimeError(f"failed to parse {xml_path}: {e}") from e
 
     readings = sorted(up.readings, key=lambda r: r.start)
     if not readings:
-        log.warning("hourly-daily: no readings in downloaded XML")
-        return
+        raise RuntimeError(f"hourly-daily: no readings in downloaded XML {xml_path}")
 
     baseline_wh = state.cumulative_wh
     baseline_start = state.latest_interval_start
@@ -411,8 +407,7 @@ async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
             bills = []
 
     if not xml_paths:
-        log.error("No downloads succeeded — nothing to import")
-        return
+        raise RuntimeError("No downloads succeeded — nothing to import")
 
     # Parse all + deduplicate readings by start timestamp (last wins).
     readings_by_start: dict[datetime, IntervalReading] = {}
@@ -428,8 +423,7 @@ async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
             readings_by_start[r.start] = r
 
     if not readings_by_start or usage_point is None:
-        log.warning("No readings parsed — nothing to import")
-        return
+        raise RuntimeError("No readings parsed from any downloaded XML — nothing to import")
 
     readings = sorted(readings_by_start.values(), key=lambda r: r.start)
     log.info("Parsed %d unique intervals (%s → %s)",
