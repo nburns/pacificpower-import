@@ -8,12 +8,10 @@ import logging
 import os
 import subprocess
 import time
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 
-from datetime import UTC
-
-from . import progress
+from . import progress, status
 from .espi import IntervalReading, UsagePoint, parse_file
 from .ha_client import HAClient, StatisticEntry
 from .scraper import Bill, PacificPowerScraper, Period, ScraperOptions
@@ -586,12 +584,27 @@ def main() -> None:
     else:
         raise SystemExit("Provide --ha-url + --ha-token, or run inside an HA add-on with SUPERVISOR_TOKEN")
 
-    asyncio.run(run(
-        args.mode, data_dir=data_dir, opts=opts, ha=ha,
-        statistic_id=args.statistic_id, statistic_name=args.statistic_name,
-        cost_statistic_id=args.cost_statistic_id, cost_statistic_name=args.cost_statistic_name,
-        backfill_window_days=args.backfill_window_days,
-    ))
+    lr = status.LastRun(
+        started_at=datetime.now(timezone.utc),
+        mode=args.mode,
+    )
+    status.save_last_run(lr)
+    try:
+        asyncio.run(run(
+            args.mode, data_dir=data_dir, opts=opts, ha=ha,
+            statistic_id=args.statistic_id, statistic_name=args.statistic_name,
+            cost_statistic_id=args.cost_statistic_id, cost_statistic_name=args.cost_statistic_name,
+            backfill_window_days=args.backfill_window_days,
+        ))
+    except Exception as e:
+        lr.finished_at = datetime.now(timezone.utc)
+        lr.ok = False
+        lr.error = str(e)
+        status.save_last_run(lr)
+        raise
+    lr.finished_at = datetime.now(timezone.utc)
+    lr.ok = True
+    status.save_last_run(lr)
 
 
 if __name__ == "__main__":

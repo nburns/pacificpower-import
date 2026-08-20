@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 import os
 import re
@@ -11,7 +12,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from . import progress
+from . import progress, status
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +62,6 @@ _HTML_TEMPLATE = """\
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="15">
 <title>Pacific Power - Diagnostics</title>
 <style>
 body {{
@@ -115,7 +115,7 @@ a {{
 </head>
 <body>
 <h1>Pacific Power Diagnostics</h1>
-<p style="color:#888">Page auto-refreshes every 15 seconds.</p>
+<p class="hint">Reload the page to update.</p>
 
 <h2>Recent logs (last 500 lines)</h2>
 <pre id="log">{log_content}</pre>
@@ -257,7 +257,6 @@ _STATUS_TEMPLATE = """\
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="10">
 <title>Pacific Power - Status</title>
 <style>
 body {{
@@ -296,10 +295,32 @@ h2 {{
 .error {{
   color: #f66;
 }}
+.hint {{
+  color: #888;
+}}
 progress {{
   width: 100%;
   height: 1.2em;
   margin: 0.5em 0;
+}}
+.badge {{
+  display: inline-block;
+  padding: 0.2em 0.7em;
+  border-radius: 3px;
+  font-weight: bold;
+  font-size: 0.95em;
+}}
+.badge-up-to-date {{ background: #2a6a2a; color: #8fea8f; }}
+.badge-backfilling {{ background: #6a4a00; color: #f0c060; }}
+.badge-error {{ background: #6a1a1a; color: #f08080; }}
+.summary-block {{
+  border: 1px solid #333;
+  background: #111;
+  padding: 0.8em 1em;
+  margin-bottom: 1.5em;
+}}
+.summary-block p {{
+  margin: 0.3em 0;
 }}
 </style>
 </head>
@@ -309,7 +330,9 @@ progress {{
   <a href="{prefix}/diagnostics">Diagnostics</a>
 </nav>
 <h1>Pacific Power - Status</h1>
-<p style="color:#888">Page auto-refreshes every 10 seconds.</p>
+<p class="hint">Reload the page to update.</p>
+
+{summary_block}
 
 <h2>Task</h2>
 <p><span class="stat-label">Task:</span> {task}</p>
@@ -335,10 +358,61 @@ _ERROR_SECTION = """\
 <p><span class="stat-label">Error at:</span> {last_error_at}</p>
 """
 
+_SUMMARY_ERROR_ROW = """\
+<p><span class="stat-label">Last error:</span> <span class="error">{last_error}</span></p>
+<p><span class="stat-label">Error at:</span> {last_error_at}</p>
+"""
+
+_SUMMARY_BLOCK = """\
+<div class="summary-block">
+<p><span class="badge badge-{state}">{state}</span></p>
+<p><span class="stat-label">Newest data:</span> {newest_data_date}</p>
+<p><span class="stat-label">Last run finished:</span> {last_run_finished}</p>
+<p><span class="stat-label">Next run:</span> {next_run_at}</p>
+<p><span class="stat-label">Schedule:</span> {schedule_cron}</p>
+{error_rows}</div>
+"""
+
+
+def _render_summary(snap: "status.StatusSnapshot", now: datetime) -> str:
+    newest = snap.newest_data_date.isoformat() if snap.newest_data_date is not None else "—"
+    last_finished = snap.last_run_finished_at.strftime("%Y-%m-%d %H:%M UTC") if snap.last_run_finished_at is not None else "—"
+    next_run = snap.next_run_at.strftime("%Y-%m-%d %H:%M UTC") if snap.next_run_at is not None else "—"
+    cron = html.escape(snap.schedule_cron) if snap.schedule_cron else "—"
+
+    error_rows = ""
+    if snap.last_error is not None and snap.last_error_at is not None:
+        age = now - snap.last_error_at
+        if age.total_seconds() < 7 * 86400:
+            error_rows = _SUMMARY_ERROR_ROW.format(
+                last_error=html.escape(snap.last_error),
+                last_error_at=snap.last_error_at.strftime("%Y-%m-%d %H:%M UTC"),
+            )
+
+    return _SUMMARY_BLOCK.format(
+        state=snap.state,
+        newest_data_date=newest,
+        last_run_finished=last_finished,
+        next_run_at=next_run,
+        schedule_cron=cron,
+        error_rows=error_rows,
+    )
+
 
 async def handle_status(request: web.Request) -> web.Response:
+    from .state import State
+
     prefix = _ingress_prefix(request)
     p = progress.load()
+    now = datetime.now(timezone.utc)
+
+    state_path = DATA_DIR / "state.json"
+    state = State.load(state_path)
+    last_run = status.load_last_run()
+    cron_expr = os.environ.get("PP_DAILY_SCHEDULE") or None
+    snap = status.compute(state, p, last_run, cron_expr=cron_expr, now=now)
+    summary_block = _render_summary(snap, now)
+
     pct = int(p.done / p.total * 100) if p.total > 0 else 0
     ewma_str = f"{p.ewma_seconds_per_item:.1f}s" if p.ewma_seconds_per_item is not None else "—"
     eta = progress.eta_seconds(p)
@@ -348,12 +422,12 @@ async def handle_status(request: web.Request) -> web.Response:
     else:
         eta_str = eta_str_val
     if eta is not None:
-        finishes_at = (datetime.now(timezone.utc) + timedelta(seconds=eta)).strftime("%Y-%m-%d %H:%M UTC")
+        finishes_at = (now + timedelta(seconds=eta)).strftime("%Y-%m-%d %H:%M UTC")
     else:
         finishes_at = "—"
     error_section = (
         _ERROR_SECTION.format(
-            last_error=str(p.last_error).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"),
+            last_error=html.escape(str(p.last_error)),
             last_error_at=p.last_error_at or "—",
         )
         if p.last_error
@@ -361,6 +435,7 @@ async def handle_status(request: web.Request) -> web.Response:
     )
     body = _STATUS_TEMPLATE.format(
         prefix=prefix,
+        summary_block=summary_block,
         task=p.task,
         done=p.done,
         total=p.total,
@@ -377,7 +452,29 @@ async def handle_status(request: web.Request) -> web.Response:
 
 
 async def handle_status_json(request: web.Request) -> web.Response:
-    return web.json_response(asdict(progress.load()))
+    from .state import State
+
+    now = datetime.now(timezone.utc)
+    p = progress.load()
+    state = State.load(DATA_DIR / "state.json")
+    last_run = status.load_last_run()
+    cron_expr = os.environ.get("PP_DAILY_SCHEDULE") or None
+    snap = status.compute(state, p, last_run, cron_expr=cron_expr, now=now)
+
+    def _snap_dict(s: "status.StatusSnapshot") -> dict:
+        return {
+            "state": s.state,
+            "newest_data_date": s.newest_data_date.isoformat() if s.newest_data_date is not None else None,
+            "last_run_started_at": s.last_run_started_at.isoformat() if s.last_run_started_at is not None else None,
+            "last_run_finished_at": s.last_run_finished_at.isoformat() if s.last_run_finished_at is not None else None,
+            "last_run_ok": s.last_run_ok,
+            "last_error": s.last_error,
+            "last_error_at": s.last_error_at.isoformat() if s.last_error_at is not None else None,
+            "next_run_at": s.next_run_at.isoformat() if s.next_run_at is not None else None,
+            "schedule_cron": s.schedule_cron,
+        }
+
+    return web.json_response({"summary": _snap_dict(snap), "progress": asdict(p)})
 
 
 def make_app() -> web.Application:
