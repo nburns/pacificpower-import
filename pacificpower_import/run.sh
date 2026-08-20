@@ -56,6 +56,10 @@ fi
 CURRENT_BACKFILL_VERSION=5
 SAVED_BACKFILL_VERSION=$(jq -r '.backfill_version // 0' "${STATE_FILE}" 2>/dev/null || echo 0)
 
+python -m pacificpower_import.web >> /data/logs/main.log 2>&1 &
+WEB_PID=$!
+ts "ingress web server started (pid=${WEB_PID})"
+
 if [[ "${HOURLY_MODE}" == "true" ]]; then
   # Read the mode that was active when state was last written.
   SAVED_LAST_MODE=$(jq -r '.last_mode // "daily"' "${STATE_FILE}" 2>/dev/null || echo "daily")
@@ -91,6 +95,7 @@ PYEOF
     if [[ "${TRICKLE_MINS}" -lt 1 ]]; then
       TRICKLE_MINS=1
     fi
+    export PP_TRICKLE_INTERVAL_MINUTES="${TRICKLE_MINS}"
 
     ts "starting hourly trickle backfill (${HOURLY_BACKFILL_DAYS_PER_HOUR} downloads/hour, every ${TRICKLE_MINS} min)"
     cat > "${CRONTAB}" <<EOF
@@ -115,10 +120,6 @@ else
 ${SCHEDULE} python -m pacificpower_import --mode daily
 EOF
 fi
-
-python -m pacificpower_import.web >> /data/logs/main.log 2>&1 &
-WEB_PID=$!
-ts "ingress web server started (pid=${WEB_PID})"
 
 ts "starting supercronic with schedule from ${CRONTAB}"
 # Loop around supercronic so the hourly-trickle job can hot-swap the crontab

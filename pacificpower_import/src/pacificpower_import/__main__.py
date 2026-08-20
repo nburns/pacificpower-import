@@ -7,11 +7,13 @@ import asyncio
 import logging
 import os
 import subprocess
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from datetime import UTC
 
+from . import progress
 from .espi import IntervalReading, UsagePoint, parse_file
 from .ha_client import HAClient, StatisticEntry
 from .scraper import Bill, PacificPowerScraper, Period, ScraperOptions
@@ -81,8 +83,10 @@ async def _download_range(
     dest_dir: Path,
 ) -> list[Path]:
     paths: list[Path] = []
+    progress.start("backfill-download", total=len(ending_dates))
     for i, d in enumerate(ending_dates):
         log.info("download %d/%d — period=%s ending=%s", i + 1, len(ending_dates), MONTH_PERIOD, d)
+        t0 = time.monotonic()
         try:
             path = await scraper.download_greenbutton(
                 period=MONTH_PERIOD, ending_on=d, dest_dir=dest_dir,
@@ -91,6 +95,11 @@ async def _download_range(
         except Exception as e:
             # Don't abort the whole backfill on one failure; log and move on.
             log.error("download for ending=%s failed: %s", d, e)
+            progress.record_error(str(e))
+        progress.tick(
+            label=f"period={MONTH_PERIOD} ending={d}",
+            item_seconds=time.monotonic() - t0,
+        )
         if i + 1 < len(ending_dates):
             await asyncio.sleep(DOWNLOAD_PAUSE_S)
     return paths
@@ -137,9 +146,12 @@ async def run_hourly_trickle(
     cost_statistic_name: str,
     backfill_window_days: int,
 ) -> None:
+    _trickle_interval = int(os.environ.get("PP_TRICKLE_INTERVAL_MINUTES", "60"))
     state = State.load(data_dir / "state.json")
     hourly_dir = data_dir / "hourly_downloads"
     hourly_dir.mkdir(parents=True, exist_ok=True)
+
+    progress.snapshot_hourly_trickle(state, backfill_window_days, _trickle_interval)
 
     if state.hourly_backfill_complete:
         log.info("hourly trickle: backfill already complete, nothing to do")
@@ -173,6 +185,7 @@ async def run_hourly_trickle(
         state.hourly_backfill_cursor = next_cursor
         state.last_mode = "hourly"
         state.save(data_dir / "state.json")
+        progress.snapshot_hourly_trickle(state, backfill_window_days, _trickle_interval)
         log.info("running hourly switchover now")
         await run_hourly_switchover(
             data_dir=data_dir,
@@ -188,6 +201,7 @@ async def run_hourly_trickle(
     state.hourly_backfill_cursor = next_cursor
     state.last_mode = "hourly"
     state.save(data_dir / "state.json")
+    progress.snapshot_hourly_trickle(state, backfill_window_days, _trickle_interval)
     log.info("hourly trickle: cursor advanced to %s", next_cursor)
 
 
@@ -275,6 +289,7 @@ async def run_hourly_daily(
     cost_statistic_id: str,
     cost_statistic_name: str,
 ) -> None:
+    progress.start("hourly-daily", total=1)
     state = State.load(data_dir / "state.json")
     dest_dir = data_dir / "downloads"
     yesterday = _yesterday()
@@ -293,11 +308,14 @@ async def run_hourly_daily(
     try:
         (up,) = parse_file(xml_path)
     except Exception as e:
+        progress.record_error(str(e))
         raise RuntimeError(f"failed to parse {xml_path}: {e}") from e
 
     readings = sorted(up.readings, key=lambda r: r.start)
     if not readings:
-        raise RuntimeError(f"hourly-daily: no readings in downloaded XML {xml_path}")
+        err = f"hourly-daily: no readings in downloaded XML {xml_path}"
+        progress.record_error(err)
+        raise RuntimeError(err)
 
     baseline_wh = state.cumulative_wh
     baseline_start = state.latest_interval_start
@@ -355,6 +373,7 @@ async def run_hourly_daily(
         )
     state.last_mode = "hourly"
     state.save(data_dir / "state.json")
+    progress.finish()
     _prune_downloads(dest_dir)
 
 
@@ -394,6 +413,7 @@ async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
         ending_dates = [_yesterday() - timedelta(days=30 * i) for i in range(BACKFILL_MONTHS)]
         ending_dates.reverse()  # oldest first, so sums grow monotonically
     elif mode == "daily":
+        progress.start("daily", total=1)
         ending_dates = [_yesterday()]
     else:
         raise ValueError(f"Unknown mode: {mode}")
@@ -431,6 +451,7 @@ async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
 
     # If this is a fresh backfill, wipe prior statistics so we don't leave
     # stale mixed-granularity leftovers behind.
+    progress.start("importing", total=1)
     async with ha:
         if mode == "backfill":
             log.info("clearing existing statistics for %s + %s before backfill",
@@ -507,6 +528,7 @@ async def run(mode: str, *, data_dir: Path, opts: ScraperOptions, ha: HAClient,
             )
         state.last_mode = "daily"
     state.save(data_dir / "state.json")
+    progress.finish()
     _prune_downloads(dest_dir)
 
 
