@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.5
+
+- `diagnostics_enabled` toggle is now live-editable. Flipping it in the HA
+  Configuration tab and saving takes effect immediately - no add-on restart
+  needed. Both the scraper's dump gate and the ingress viewer re-read
+  `/data/options.json` on each check.
+- Fix misleading storage-dir log line. Previous versions used
+  `Path.iterdir()`, which skipped Chromium's `Default/` subdirectory and made
+  every run look like the persistent context was empty (`0.0 KB total`).
+  Now uses `rglob("*")` so the reported file count and size reflect what's
+  actually on disk.
+
 ## 0.3.4
 
 - Add Home Assistant ingress web page (port 8099) exposing a live log tail and

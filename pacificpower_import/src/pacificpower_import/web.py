@@ -171,7 +171,8 @@ shows no logs or captures.</p>
 
 
 def _diagnostics_enabled() -> bool:
-    return os.environ.get("PP_DIAGNOSTICS_ENABLED", "false").lower() == "true"
+    from .runtime_flags import diagnostics_enabled
+    return diagnostics_enabled()
 
 
 async def handle_index(request: web.Request) -> web.Response:

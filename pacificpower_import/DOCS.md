@@ -75,7 +75,7 @@ Adjust `hourly_backfill_days_per_hour` (1–60) and `hourly_backfill_window_days
 
 ## Diagnostics
 
-Diagnostics is **off by default**. To enable it, open the add-on Configuration tab, toggle **Diagnostics enabled** on, and save. The add-on restarts and starts capturing screenshots + HTML dumps on scraper failures. Toggle it back off any time; the scraper will stop writing new dumps and the ingress page will show a placeholder.
+Diagnostics is **off by default**. To enable it, open the add-on Configuration tab, toggle **Diagnostics enabled** on, and save. The change takes effect immediately - no add-on restart needed. Toggle it back off any time; the scraper will stop writing new dumps and the ingress page will show a placeholder.
 
 **Credential safety.** Before every capture, a DOM scrub runs against the live page: every `<input>`/`<textarea>` value is blanked (both the property and the attribute), and every `<script>` textContent is stripped. This means even a screenshot of the login page shows empty username/password fields, and no HTML dump ever carries the credentials. If the scrub itself fails, the whole capture is refused rather than risking a leak. Old debug files under `/data/debug/` are pruned to the 20 most recent pairs; if you want to purge everything (e.g. before disabling diagnostics permanently), delete the directory manually.
 

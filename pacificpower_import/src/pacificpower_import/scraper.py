@@ -144,8 +144,11 @@ class PacificPowerScraper:
     async def __aenter__(self) -> "PacificPowerScraper":
         sd = self._opts.storage_dir
         if sd.exists():
-            files = list(sd.iterdir())
-            total = sum(f.stat().st_size for f in files if f.is_file())
+            # Recurse: Chromium stores cookies under Default/, so a non-recursive
+            # listing showed "1 files, 0.0 KB" even when the context was fully
+            # populated and misled us into thinking sessions weren't persisting.
+            files = [p for p in sd.rglob("*") if p.is_file()]
+            total = sum(p.stat().st_size for p in files)
             log.info("storage_dir %s: exists, %d files, %.1f KB total",
                      sd, len(files), total / 1024)
         else:
@@ -177,10 +180,11 @@ class PacificPowerScraper:
 
     async def _dump_debug(self, page: Page, tag: str) -> None:
         """Capture a screenshot + HTML dump for post-mortem debugging.
-        Never raises - errors are logged as warnings. Gated on
-        PP_DIAGNOSTICS_ENABLED so failed runs don't accrue disk usage
-        when the user hasn't opted in to diagnostics."""
-        if os.environ.get("PP_DIAGNOSTICS_ENABLED", "false").lower() != "true":
+        Never raises - errors are logged as warnings. Gated on the live
+        'diagnostics_enabled' option so failed runs don't accrue disk
+        usage when the user hasn't opted in to diagnostics."""
+        from .runtime_flags import diagnostics_enabled
+        if not diagnostics_enabled():
             log.info("debug dump skipped (diagnostics disabled); tag=%s", tag)
             return
         try:
