@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.6
+
+- Log cookies restored from disk at Chromium context startup. Lets us
+  distinguish "persistent context loaded 17 cookies but PP redirected us to
+  login anyway" (PP-side session expiry) from "0 cookies loaded" (Chromium
+  isn't reading the disk state at all).
+- Log the actual `page.url` on the "Not authenticated" branch of
+  `_ensure_logged_in`. Distinguishes a genuine PP-side session expiry
+  (redirect to `login.csapps.pacificpower.net`) from a bug in the
+  DASHBOARD_URL match or an unexpected challenge page.
+
 ## 0.3.5
 
 - `diagnostics_enabled` toggle is now live-editable. Flipping it in the HA

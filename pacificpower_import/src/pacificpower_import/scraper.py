@@ -170,6 +170,13 @@ class PacificPowerScraper:
                 "--disable-features=Translate,MediaRouter",
             ],
         )
+        try:
+            initial_cookies = await self._ctx.cookies()
+            pp_initial = [c for c in initial_cookies if "pacificpower" in c["domain"]]
+            log.info("cookies restored from disk: total=%d pacificpower.net=%d",
+                     len(initial_cookies), len(pp_initial))
+        except Exception as exc:
+            log.warning("could not read initial cookies: %s", exc)
         return self
 
     async def __aexit__(self, *exc) -> None:
@@ -370,7 +377,11 @@ class PacificPowerScraper:
 
         # The login form lives inside an <iframe id="loginframe"> running an
         # Azure B2C flow on login.csapps.pacificpower.net.
-        log.info("Not authenticated — running login flow")
+        # Log where we actually landed so we can tell PP session-TTL expiry
+        # (redirect to login.csapps.pacificpower.net) from a bug in the
+        # DASHBOARD_URL match or an unexpected challenge page.
+        log.info("Not authenticated — running login flow (landed on %s)",
+                 _sanitize_url_for_log(page.url))
         await _goto_with_retry(page, LOGIN_URL)
         await page.wait_for_selector("#loginframe", timeout=30_000)
 
